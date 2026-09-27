@@ -1,0 +1,1479 @@
+[
+  {
+    "name": "Violating-content prevalence",
+    "question": "Out of everything people see, how much breaks our rules?",
+    "definition": "Share of content views that violate policy, from a statistically valid random sample of impressions.",
+    "why": "Measures exposure: what users actually see, not how busy your team is.",
+    "watch_out": "Too-small samples swing month to month. Publish confidence intervals.",
+    "area": "Harm outcomes",
+    "tier": "North star",
+    "platforms": "all",
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "violating views in the sample ÷ all views in the sample",
+    "src": [
+      "imp",
+      "use"
+    ],
+    "steps": [
+      "Draw a uniform random sample of content views every day (for example 1 in 100,000 impressions). Sample views, not posts.",
+      "Send each sampled item to trained labelers who apply the current policy blind: two labels per item, with an expert tiebreak.",
+      "Compute the violating share overall and per policy area, and always report a 95% confidence interval with it.",
+      "Size the sample so the interval is useful. Near 0.1% prevalence you need about 40,000 labeled views for a ±0.03 point interval."
+    ],
+    "q": "SELECT surface,\n  AVG(CASE WHEN label = 'violating' THEN 1.0 ELSE 0 END) AS prevalence,\n  COUNT(*) AS sampled_views\nFROM exposure_sample\nWHERE sampled_at >= CURRENT_DATE - INTERVAL '28 days'\nGROUP BY surface;\n-- 95% interval = 1.96 * SQRT(prevalence * (1 - prevalence) / sampled_views)",
+    "cad": "Daily sample, reported monthly on a trailing 28 days",
+    "own": "Data science, with policy for labeling",
+    "dir": "down",
+    "rv": "q",
+    "ex": "In 28 days you label 50,000 sampled views and 60 violate. Prevalence is 0.12%, about 12 in every 10,000 views, ±0.03 points.",
+    "mvp": "Each week, pull 200 randomly chosen views from your logs and have two people label them in a spreadsheet. Imprecise, but real.",
+    "pair": "Appeal overturn rate",
+    "platform_notes": {
+      "social": "Sample feed, search and recommendation views separately. Recommended content usually carries the most exposure, and ranking changes move it first.",
+      "market": "Sample listing views, not listings, so popular listings count more. Prohibited items cluster in a few categories, so report those on their own.",
+      "gaming": "Sample chat lines, views of player-made content and, where players have consented, short voice clips. Report text and voice separately.",
+      "dating": "Sample profile views and first messages. Most harm on dating apps arrives in messages, not on public profiles.",
+      "genai": "Your unit is a generation. Sample production conversations, remove personal data, and label each output together with the prompt that caused it.",
+      "fintech": "There is little public content. Apply prevalence to what users do see: payee names, payment notes and profile text, where scams and abuse hide.",
+      "gig": "Apply it to listings, profiles and reviews, and to messages between workers and customers.",
+      "kids": "Sample what young users actually see, separately from adults. The same prevalence in a children's feed is a far bigger problem."
+    },
+    "scorecard_measure": [
+      "Prevalence",
+      "%"
+    ]
+  },
+  {
+    "name": "Fraud loss rate",
+    "question": "How much money do we lose to fraud for every dollar that moves through us?",
+    "definition": "Fraud losses (chargebacks, scam reimbursements, buyer-protection payouts) in basis points of GMV or payment volume.",
+    "why": "The number Finance already watches. It puts T&S in the P&L conversation.",
+    "watch_out": "It lags by weeks because of chargeback windows. Pair it with a leading signal.",
+    "area": "Harm outcomes",
+    "tier": "North star",
+    "platforms": [
+      "market",
+      "fintech",
+      "gig"
+    ],
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "fraud losses ÷ GMV × 10,000 (basis points)",
+    "src": [
+      "fin",
+      "use"
+    ],
+    "steps": [
+      "Agree with Finance which losses count: fraud chargebacks, scam refunds, buyer-protection payouts and goodwill credits.",
+      "Attribute each loss to the month of the original order (a cohort view), not the month the chargeback arrived.",
+      "Divide by the GMV of the same order cohort and express it in basis points.",
+      "Mark the last three months as provisional. They will rise as late chargebacks arrive."
+    ],
+    "q": "WITH loss AS (\n  SELECT order_id, SUM(amount) AS amt FROM fraud_losses GROUP BY order_id)\nSELECT DATE_TRUNC('month', o.ordered_at) AS order_month,\n  10000.0 * SUM(COALESCE(loss.amt, 0)) / SUM(o.gmv) AS fraud_loss_bps\nFROM orders o\nLEFT JOIN loss ON loss.order_id = o.order_id\nGROUP BY 1 ORDER BY 1;",
+    "cad": "Monthly, with recent months marked provisional",
+    "own": "Payments risk or Finance, with T&S",
+    "dir": "down",
+    "rv": "q",
+    "ex": "$180,000 of fraud losses on $60M of GMV is 30 basis points (0.30%).",
+    "mvp": "Ask Finance for the monthly chargeback and refund report, and divide it by GMV yourself.",
+    "pair": "Verified-profile share",
+    "platform_notes": {
+      "market": "Include buyer-protection payouts and seller fraud (non-delivery, counterfeit refunds), not only card chargebacks.",
+      "fintech": "Divide by total payment volume. Split third-party fraud (stolen cards, takeovers) from first-party fraud (customers who lie), and include scam reimbursements where rules require them, such as the UK's authorized push payment scheme.",
+      "gig": "Divide by gross bookings. Include promotion abuse, fake trips and false refund claims, which are often bigger than card fraud."
+    },
+    "scorecard_measure": [
+      "Fraud losses",
+      "bps"
+    ]
+  },
+  {
+    "name": "Toxicity per 1,000 match-hours",
+    "question": "How often do players run into abuse while they play?",
+    "definition": "Confirmed toxic incidents (text and voice) per 1,000 hours of play.",
+    "why": "Normalizes for engagement growth, so a busy launch week doesn't look like a spike.",
+    "watch_out": "Voice is under-reported. Measure it separately if you can.",
+    "area": "Harm outcomes",
+    "tier": "North star",
+    "platforms": [
+      "gaming"
+    ],
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "confirmed toxic incidents ÷ match-hours × 1,000",
+    "src": [
+      "act",
+      "rep",
+      "use"
+    ],
+    "steps": [
+      "Count incidents confirmed by review or by a high-precision classifier, not raw reports.",
+      "Take match-hours from game telemetry for the same period, modes and regions.",
+      "Break it out by channel (text, voice, gameplay griefing) and by mode. Ranked and casual play behave differently.",
+      "Measure voice from its own labeled sample of sessions (where players have consented), because players rarely report voice abuse."
+    ],
+    "q": "-- daily_mode_stats: one row per mode per day,\n-- joining telemetry hours to confirmed incidents\nSELECT mode,\n  1000.0 * SUM(confirmed_incidents) / SUM(match_hours) AS incidents_per_1k_hours\nFROM daily_mode_stats\nWHERE day >= CURRENT_DATE - INTERVAL '28 days'\nGROUP BY mode;",
+    "cad": "Weekly, and daily during launches and events",
+    "own": "Player safety, with game analytics",
+    "dir": "down",
+    "rv": "m",
+    "ex": "1,200 confirmed incidents over 400,000 match-hours is 3 per 1,000 hours. A new mode launching at 7 is a clear signal before reports pile up.",
+    "mvp": "Each month, divide confirmed reports by the hours played shown in your game analytics dashboard.",
+    "pair": "Churn after toxic exposure",
+    "platform_notes": {
+      "gaming": "Use match-hours in modes where players can talk to strangers. Solo modes dilute the rate."
+    },
+    "scorecard_measure": [
+      "Incidents per 1,000 match-hours",
+      "rate"
+    ]
+  },
+  {
+    "name": "Violating-generation rate",
+    "question": "How often does our AI produce something it shouldn't?",
+    "definition": "Share of outputs that violate policy, measured on a fixed red-team suite plus a sample of production traffic.",
+    "why": "The core safety measure for a generative product.",
+    "watch_out": "Fixed suites get stale. Refresh them quarterly or the model overfits to them.",
+    "area": "Harm outcomes",
+    "tier": "North star",
+    "platforms": [
+      "genai"
+    ],
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "violating outputs ÷ outputs graded, shown separately for the eval suite and for production samples",
+    "src": [
+      "eval",
+      "imp"
+    ],
+    "steps": [
+      "Keep a versioned evaluation suite of prompts per harm area (for example self-harm, weapons, sexual content, hate), with the expected behavior for each.",
+      "Run it on every model or system-prompt change, and grade outputs against a rubric. Model graders are fine if you check them against humans.",
+      "Separately, sample real production conversations at random, remove personal data, and grade them the same way.",
+      "Report both. The suite catches regressions between releases; production shows what users actually get."
+    ],
+    "q": "SELECT suite, harm_area, model_version,\n  AVG(CASE WHEN output_label = 'violating' THEN 1.0 ELSE 0 END) AS violating_rate,\n  COUNT(*) AS graded\nFROM eval_runs\nGROUP BY suite, harm_area, model_version\nORDER BY model_version DESC;",
+    "cad": "Every release, plus a weekly production sample",
+    "own": "Model safety or evaluations team",
+    "dir": "down",
+    "rv": "r",
+    "ex": "Version 4.2 produces violating output on 0.6% of the self-harm suite against 0.2% for 4.1. The release waits until it is fixed.",
+    "mvp": "A spreadsheet of 200 risky prompts, run by hand before each release and graded by two people.",
+    "pair": "Over-refusal rate",
+    "platform_notes": {
+      "genai": "Grade the whole conversation, not only the last turn. Many failures come after several turns of setup."
+    },
+    "scorecard_measure": [
+      "Violating outputs",
+      "%"
+    ]
+  },
+  {
+    "name": "Romance-scam reports per 10k matches",
+    "question": "How often are our users targeted by romance scammers?",
+    "definition": "Confirmed scam reports normalized by match volume.",
+    "why": "Scams are the defining harm on dating platforms, and the losses are severe.",
+    "watch_out": "Victims under-report out of embarrassment. Add a proactive-detection view.",
+    "area": "Harm outcomes",
+    "tier": "North star",
+    "platforms": [
+      "dating"
+    ],
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "confirmed romance-scam cases ÷ matches × 10,000",
+    "src": [
+      "rep",
+      "act",
+      "use"
+    ],
+    "steps": [
+      "Count only cases confirmed by review, and count scammer accounts too, so one scammer with 40 victims is visible.",
+      "Take matches from product analytics for the same period and region.",
+      "Show cases caught proactively, before any victim reported, as a separate line.",
+      "Track the time from first message to the first request for money or to move off the platform. That is the pattern to detect early."
+    ],
+    "q": "SELECT week, region,\n  10000.0 * SUM(confirmed_scam_cases) / SUM(matches) AS cases_per_10k_matches,\n  SUM(proactive_scam_cases) AS caught_before_report\nFROM weekly_region_stats\nGROUP BY week, region\nORDER BY week DESC;",
+    "cad": "Weekly",
+    "own": "Dating safety team",
+    "dir": "down",
+    "rv": "m",
+    "ex": "84 confirmed cases across 300,000 matches is 2.8 per 10,000. If 60% were caught before a report, show both numbers.",
+    "mvp": "Tag every confirmed scam case in your ticketing tool, and divide the monthly count by monthly matches.",
+    "pair": "Proactive detection rate",
+    "platform_notes": {
+      "dating": "Look for the pattern: fast emotional escalation, then a push to move to another app, then talk of money or crypto investing."
+    },
+    "scorecard_measure": [
+      "Cases per 10k matches",
+      "rate"
+    ]
+  },
+  {
+    "name": "Account takeover rate",
+    "question": "How often do attackers take over our users' accounts?",
+    "definition": "Confirmed account takeovers per 10,000 active accounts, with the money or data lost.",
+    "why": "Takeovers hurt your most loyal users, and the losses land on you or on them.",
+    "watch_out": "Victims report late or blame themselves. Count cases found by detection, not just reports.",
+    "area": "Harm outcomes",
+    "tier": "North star",
+    "platforms": [
+      "fintech",
+      "market",
+      "gaming"
+    ],
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "confirmed account takeovers ÷ active accounts × 10,000",
+    "src": [
+      "auth",
+      "rep",
+      "use"
+    ],
+    "steps": [
+      "Define a confirmed takeover: someone other than the owner got in and acted (changed credentials, moved money, messaged contacts), confirmed by the owner or an investigation.",
+      "Link each case to the security events before it: new device, password reset, 2-step verification change, new payee.",
+      "Count per 10,000 active accounts, split by how the attacker got in: phishing, reused passwords, SIM swap or session theft.",
+      "Record the loss per case and the time from takeover to lock. That shows whether detection is fast enough."
+    ],
+    "q": "WITH ato AS (\n  SELECT DATE_TRUNC('month', confirmed_at) AS month, entry_method,\n         COUNT(*) AS takeovers, SUM(loss_amount) AS losses\n  FROM account_takeovers\n  GROUP BY 1, 2)\nSELECT ato.month, ato.entry_method,\n  10000.0 * ato.takeovers / u.active_accounts AS ato_per_10k,\n  ato.losses\nFROM ato\nJOIN monthly_active u ON u.month = ato.month;",
+    "cad": "Weekly, reported monthly",
+    "own": "Account security or fraud team",
+    "dir": "down",
+    "rv": "m",
+    "ex": "42 confirmed takeovers across 150,000 active accounts is 2.8 per 10,000. 30 came through SIM swaps, so text-message codes are the weak point.",
+    "mvp": "Tag every support ticket where a user says \"someone got into my account\", and confirm them weekly.",
+    "pair": "Fraud loss rate",
+    "platform_notes": {
+      "fintech": "Include cases where the customer was tricked into sharing a code. Whether or not you reimburse them, they are takeovers.",
+      "market": "Seller takeovers are the costly ones: attackers change the payout bank account. Alert on payout changes after a new-device login.",
+      "gaming": "Stolen accounts are resold for their items. Watch for a new device followed by mass item trading."
+    },
+    "scorecard_measure": [
+      "Takeovers per 10k active accounts",
+      "rate"
+    ]
+  },
+  {
+    "name": "Unsafe-contact rate for minors",
+    "question": "How often do adults try to contact children inappropriately on our product?",
+    "definition": "Confirmed cases of adults seeking inappropriate contact with minors (grooming, sexual solicitation, sextortion) per 10,000 young users.",
+    "why": "The harm with the worst consequences on any product children use, and the first thing regulators check.",
+    "watch_out": "Children rarely report it themselves. Reports alone will badly undercount it.",
+    "area": "Harm outcomes",
+    "tier": "North star",
+    "platforms": [
+      "kids",
+      "social",
+      "gaming"
+    ],
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "confirmed unsafe adult-to-minor contact cases ÷ active young users × 10,000",
+    "src": [
+      "act",
+      "rep",
+      "det",
+      "use"
+    ],
+    "steps": [
+      "Define the case types with your child-safety specialists: grooming, sexual solicitation, sextortion, and adults pushing a child to move to another app.",
+      "Count confirmed cases by adult account, and record how each was found: the child, a parent or teacher, or detection.",
+      "Divide by active users under 18 (or your own age bands) for the same period.",
+      "Record where contact started (search, recommendations, open messages, voice, friend requests) so you can close the path, not just ban the account.",
+      "Cases involving apparent child sexual exploitation must be reported to the authorities (in the US, the NCMEC CyberTipline). Track that reporting with its own timestamps."
+    ],
+    "q": "SELECT DATE_TRUNC('month', c.confirmed_at) AS month, c.found_by,\n  10000.0 * COUNT(DISTINCT c.case_id) / MAX(u.young_users) AS cases_per_10k\nFROM child_safety_cases c\nJOIN monthly_young_users u\n  ON u.month = DATE_TRUNC('month', c.confirmed_at)\nGROUP BY 1, 2\nORDER BY 1 DESC;",
+    "cad": "Weekly with specialists, monthly to leadership",
+    "own": "Child-safety team",
+    "dir": "down",
+    "rv": "m",
+    "ex": "18 confirmed cases among 90,000 young users is 2 per 10,000. 12 began with open direct messages from accounts the child didn't follow, so the fix is a default setting, not more moderators.",
+    "mvp": "Give every child-safety ticket a case type and a \"how we found it\" tag, and count them monthly with a specialist.",
+    "pair": "Age-assurance coverage",
+    "platform_notes": {
+      "kids": "Measure across every way adults and children can meet: chat, voice, friend requests, comments and classroom tools.",
+      "social": "You need a reliable age signal to count young users. Read it with age-assurance coverage.",
+      "gaming": "Voice chat and friend requests from strangers are common starting points. Split the rate by entry path."
+    },
+    "scorecard_measure": [
+      "Cases per 10k young users",
+      "rate"
+    ]
+  },
+  {
+    "name": "Safety incidents per 10k trips",
+    "question": "How often is someone hurt or put in danger during a trip or booking?",
+    "definition": "Confirmed safety incidents (assault, harassment, dangerous driving, property damage) per 10,000 completed trips, bookings or deliveries, by severity.",
+    "why": "On gig and rental platforms the harm happens offline, and one serious incident can end up in the news or in court.",
+    "watch_out": "Serious incidents are rare, so monthly rates jump around. Show counts by severity and use rolling 12-month rates for the worst categories.",
+    "area": "Harm outcomes",
+    "tier": "North star",
+    "platforms": [
+      "gig"
+    ],
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "confirmed safety incidents ÷ completed trips × 10,000, per severity level",
+    "src": [
+      "rep",
+      "act",
+      "use"
+    ],
+    "steps": [
+      "Agree a severity scale with legal and insurance, for example critical (sexual assault, serious injury), high (physical fight, threats), medium (harassment, dangerous driving), low (rudeness, minor damage).",
+      "Collect reports from every channel (in-app safety button, support, emergency line, police requests, insurance claims) and merge them into one case per incident.",
+      "Divide by completed trips, bookings or deliveries in the same period, and report each severity level separately.",
+      "Count incidents against workers as well as customers. Workers are harmed too, and report less."
+    ],
+    "q": "SELECT i.severity,\n  10000.0 * COUNT(DISTINCT i.incident_id) / MAX(t.completed_trips) AS per_10k_trips\nFROM safety_incidents i\nJOIN monthly_trips t ON t.month = DATE_TRUNC('month', i.occurred_at)\nWHERE i.confirmed\n  AND i.occurred_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')\n  AND i.occurred_at <  DATE_TRUNC('month', CURRENT_DATE)\nGROUP BY i.severity;",
+    "cad": "Weekly for critical incidents, monthly for rates",
+    "own": "Safety team, with legal and insurance",
+    "dir": "down",
+    "rv": "q",
+    "ex": "Last month had 3 critical and 41 medium incidents across 2.4 million trips: 0.0125 and 0.17 per 10,000. Each critical case gets a full review; the medium rate is the one to trend.",
+    "mvp": "Tag every safety ticket with a severity, and count them monthly against completed trips.",
+    "pair": "Verified-profile share",
+    "platform_notes": {
+      "gig": "Record where incidents happen: at pickup, during the trip or stay, or afterwards when people contact each other off the platform."
+    },
+    "scorecard_measure": [
+      "Incidents per 10k trips, all severities",
+      "rate"
+    ]
+  },
+  {
+    "name": "Users who feel safe",
+    "question": "Do our users actually feel safe here?",
+    "definition": "Share of surveyed users who say they feel safe on the platform, from a regular in-product survey.",
+    "why": "It captures harm your logs never see, it is what users tell their friends, and every executive understands it.",
+    "watch_out": "Results drift with who answers. Keep the question wording fixed and weight answers to match your user base.",
+    "area": "Harm outcomes",
+    "tier": "North star",
+    "platforms": "all",
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "respondents answering safe or very safe ÷ all respondents (weighted)",
+    "src": [
+      "survey",
+      "use"
+    ],
+    "steps": [
+      "Pick one fixed question, such as \"How safe do you feel on our app?\" on a five-point scale, and never change the wording.",
+      "Ask a random sample of active users in the product every month, and cap how often any one person is asked.",
+      "Weight answers to match your user base (region, age band, tenure), and report the share answering safe or very safe with a confidence interval.",
+      "Split by group: new users, women, younger users, creators. The gaps between groups matter more than the average."
+    ],
+    "q": "SELECT segment,\n  SUM(CASE WHEN answer IN ('safe', 'very_safe') THEN weight ELSE 0 END)\n    / SUM(weight) AS feel_safe,\n  COUNT(*) AS responses\nFROM survey_responses\nWHERE question_id = 'feel_safe'\n  AND asked_at >= CURRENT_DATE - INTERVAL '90 days'\nGROUP BY segment;",
+    "cad": "Monthly survey, reported quarterly",
+    "own": "User research, with T&S",
+    "dir": "up",
+    "rv": "q",
+    "ex": "74% of users say they feel safe, but only 58% of women aged 18 to 24. That gap, not the average, is the headline for leadership.",
+    "mvp": "Add one fixed question to a survey you already run, and track the answer every quarter.",
+    "pair": "Violating-content prevalence",
+    "platform_notes": {
+      "dating": "Ask after first dates as well as in the app. Offline safety is the main worry.",
+      "gig": "Survey workers and customers separately. Their risks are different.",
+      "genai": "Ask whether users trust the AI's answers to be safe and appropriate for them, not just whether they feel safe.",
+      "kids": "Ask parents and teachers as well as young users, and use age-appropriate wording."
+    },
+    "scorecard_measure": [
+      "Feel safe or very safe",
+      "%"
+    ]
+  },
+  {
+    "name": "Harmful reach before action",
+    "question": "How many people see harmful content before we take it down?",
+    "definition": "Views a violating item gets before it is actioned (p50 / p90).",
+    "why": "Links speed to harm. A fast removal of a viral post matters more than a fast removal of an unseen one.",
+    "watch_out": "A handful of viral items dominate. Report the tail, not the mean.",
+    "area": "Harm outcomes",
+    "tier": "Health",
+    "platforms": [
+      "social",
+      "gaming",
+      "kids"
+    ],
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "views a violating item received before it was actioned, at p50 and p90",
+    "src": [
+      "act",
+      "use"
+    ],
+    "steps": [
+      "Keep a running view counter on every object, and copy it into the decision log (views_at_action) when you act.",
+      "Limit it to actions that removed or restricted content for a violation.",
+      "Report the median and 90th percentile per policy area and per source (proactive or user report).",
+      "Look at the top 1% of items on their own. A few viral items usually account for most of the harmful reach."
+    ],
+    "q": "SELECT policy,\n  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY views_at_action) AS p50_views,\n  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY views_at_action) AS p90_views,\n  SUM(views_at_action) AS total_harmful_views\nFROM enforcement_actions\nWHERE action IN ('remove', 'restrict')\n  AND decided_at >= CURRENT_DATE - INTERVAL '28 days'\nGROUP BY policy;",
+    "cad": "Weekly",
+    "own": "T&S operations, with data science",
+    "dir": "down",
+    "rv": "m",
+    "ex": "Hate-speech removals have a median of 40 views before action but a p90 of 9,000. The fix is faster triage of fast-growing content, not faster review of everything.",
+    "mvp": "When you remove something, write the view count shown on it into the case notes.",
+    "pair": "Time to action by severity (p90)",
+    "platform_notes": {
+      "social": "Use impressions, not likes or shares. Shares from large accounts drive most of the tail.",
+      "gaming": "Count players who saw the item: lobby members, stream viewers, or downloads of a player-made map.",
+      "kids": "Count views by young users separately. The number to lower is child exposure, not total exposure."
+    },
+    "scorecard_measure": [
+      "p90 views before action",
+      "views"
+    ]
+  },
+  {
+    "name": "Prohibited-listing prevalence",
+    "question": "How much of what's for sale shouldn't be?",
+    "definition": "Share of live listings that are counterfeit, prohibited or misrepresented, by category.",
+    "why": "Shows where buyers are most exposed.",
+    "watch_out": "Varies heavily by category. A blended number hides your worst category.",
+    "area": "Harm outcomes",
+    "tier": "Health",
+    "platforms": [
+      "market"
+    ],
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "violating listings in a random sample of live listings ÷ listings sampled, per category",
+    "src": [
+      "imp",
+      "act"
+    ],
+    "steps": [
+      "Each week, sample live listings at random, stratified by category so small high-risk categories get enough samples.",
+      "Have trained reviewers label each one compliant, prohibited, counterfeit or misrepresented. Use brand-authentication help for counterfeits.",
+      "Weight each category by its share of listing views to get a buyer-exposure figure.",
+      "Report your worst three categories on their own, not just the blended number."
+    ],
+    "q": "SELECT category,\n  AVG(CASE WHEN label <> 'compliant' THEN 1.0 ELSE 0 END) AS prohibited_share,\n  COUNT(*) AS sampled\nFROM listing_sample\nWHERE sampled_at >= CURRENT_DATE - INTERVAL '28 days'\nGROUP BY category\nORDER BY prohibited_share DESC;",
+    "cad": "Weekly sample, monthly report",
+    "own": "Marketplace integrity, with category managers",
+    "dir": "down",
+    "rv": "m",
+    "ex": "Overall prevalence is 0.8%, but luxury handbags sit at 6%. That category gets authentication requirements; the rest of the catalog does not need them.",
+    "mvp": "Every Friday, review 50 random live listings in your riskiest category.",
+    "pair": "Precision and recall by policy area",
+    "platform_notes": {
+      "market": "Split by seller age as well as category. New sellers often account for a large share of prohibited listings."
+    },
+    "scorecard_measure": [
+      "Prohibited share of live listings",
+      "%"
+    ]
+  },
+  {
+    "name": "Over-refusal rate",
+    "question": "How often does our AI refuse perfectly reasonable requests?",
+    "definition": "Share of clearly benign prompts that the model refuses or heavily hedges.",
+    "why": "The counterweight to safety. Over-refusal is also a harm to users and to the product.",
+    "watch_out": "Tracking only the violation rate pushes teams toward refusing everything.",
+    "area": "Decision quality",
+    "tier": "Health",
+    "platforms": [
+      "genai"
+    ],
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "refused or heavily hedged answers to benign prompts ÷ benign prompts graded",
+    "src": [
+      "eval"
+    ],
+    "steps": [
+      "Build a benign suite that looks risky but is fine: medical questions, safety research, history, dark fiction.",
+      "Grade each answer as helpful, hedged (answers but buries it) or refused.",
+      "Run it with the violation suite on every release, and chart the two lines together.",
+      "Sample production conversations where the model refused, and label how many were actually benign."
+    ],
+    "q": "SELECT model_version,\n  AVG(CASE WHEN output_label IN ('refused', 'hedged') THEN 1.0 ELSE 0 END)\n    AS over_refusal_rate\nFROM eval_runs\nWHERE suite = 'benign_borderline'\nGROUP BY model_version;",
+    "cad": "Every release",
+    "own": "Model safety, with product",
+    "dir": "down",
+    "rv": "r",
+    "ex": "A new filter halves violating output but raises over-refusal from 3% to 11%. The team tunes it before shipping, because users would leave.",
+    "mvp": "Add 100 benign but edgy prompts to the same spreadsheet and grade them in the same session.",
+    "pair": "Violating-generation rate",
+    "platform_notes": {
+      "genai": "Measure image and file filters separately from text. They over-block in different ways."
+    },
+    "scorecard_measure": [
+      "Over-refused benign prompts",
+      "%"
+    ]
+  },
+  {
+    "name": "Jailbreak success rate",
+    "question": "How often can attackers trick our AI into breaking its rules?",
+    "definition": "Share of known adversarial techniques that get policy-violating output, by technique family.",
+    "why": "Tracks how robust the model is as attacks evolve.",
+    "watch_out": "It only covers attacks you already know about. Pair it with external red-teaming.",
+    "area": "Detection",
+    "tier": "Health",
+    "platforms": [
+      "genai"
+    ],
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "attacks that produce violating output ÷ attacks attempted, per technique family",
+    "src": [
+      "eval"
+    ],
+    "steps": [
+      "Group known attacks into families: role-play, encoding, many-shot, prompt injection through documents or tools, multi-turn escalation.",
+      "Keep a few dozen variants of each family and run all of them on every release.",
+      "Add new techniques from bug bounty reports, red-team exercises and public research within a week of discovery.",
+      "Report per family. A blended rate hides the family that works every time."
+    ],
+    "q": "SELECT technique, model_version,\n  AVG(CASE WHEN output_label = 'violating' THEN 1.0 ELSE 0 END) AS success_rate,\n  COUNT(*) AS attempts\nFROM eval_runs\nWHERE suite = 'jailbreak'\nGROUP BY technique, model_version;",
+    "cad": "Every release, and when a new technique is published",
+    "own": "Red team",
+    "dir": "down",
+    "rv": "r",
+    "ex": "Role-play attacks succeed 2% of the time, but prompt injection through uploaded documents succeeds 18%. That is where engineering time goes next.",
+    "mvp": "Keep a list of every attack that has worked on you, and re-run all of them before each release.",
+    "pair": "Over-refusal rate",
+    "platform_notes": {
+      "genai": "If your product uses tools or reads documents and web pages, test prompt injection through those inputs. Many new attacks arrive that way."
+    },
+    "scorecard_measure": [
+      "Success rate, worst technique family",
+      "%"
+    ]
+  },
+  {
+    "name": "Verified-profile share",
+    "question": "How many of our active users have proven who they are?",
+    "definition": "Share of active profiles or sellers that passed identity or liveness checks.",
+    "why": "A leading indicator for fraud and impersonation.",
+    "watch_out": "Verification is not good behavior. Verified bad actors exist.",
+    "area": "Detection",
+    "tier": "Health",
+    "platforms": [
+      "dating",
+      "market",
+      "fintech",
+      "gig"
+    ],
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "active accounts that passed verification ÷ all active accounts",
+    "src": [
+      "use",
+      "act"
+    ],
+    "steps": [
+      "Store verification status, method (ID document, selfie liveness, phone, bank) and date on the account record.",
+      "Count only accounts active in the period, so dormant verified accounts do not inflate the number.",
+      "Split by method. A phone check and a liveness check are not the same level of assurance.",
+      "Compare violation rates of verified and unverified accounts, to prove verification is worth its friction."
+    ],
+    "q": "SELECT verification_method,  -- includes 'none'\n  COUNT(*) * 1.0 / SUM(COUNT(*)) OVER () AS share_of_active\nFROM accounts\nWHERE last_active_at >= CURRENT_DATE - INTERVAL '28 days'\nGROUP BY verification_method;",
+    "cad": "Monthly",
+    "own": "Identity or integrity team",
+    "dir": "up",
+    "rv": "m",
+    "ex": "38% of active sellers are verified, and they account for 9% of fraud cases. That makes the case for requiring verification above a sales threshold.",
+    "mvp": "Take the pass count from your verification vendor's dashboard and divide by monthly active users.",
+    "pair": "Fraud loss rate",
+    "platform_notes": {
+      "dating": "Selfie or liveness checks matter most. The main risk is fake identity, not payment fraud.",
+      "market": "Verify sellers first, especially above a sales threshold. Verifying buyers adds friction for less benefit.",
+      "fintech": "This is your KYC pass rate. Report the share verified at onboarding and after risk events, and how many legitimate customers get stuck.",
+      "gig": "Include background checks for workers and real-time selfie checks, which stop banned workers from using a friend's account."
+    },
+    "scorecard_measure": [
+      "Verified share of active accounts",
+      "%"
+    ]
+  },
+  {
+    "name": "Proactive detection rate",
+    "question": "How much harm do we catch before anyone has to report it?",
+    "definition": "Share of actioned violations found by your systems before any user reported them.",
+    "why": "Shows how much harm you catch instead of waiting for victims to report it.",
+    "watch_out": "It can rise simply because you over-enforce. Always read it with precision.",
+    "area": "Detection",
+    "tier": "Health",
+    "platforms": "all",
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "violations actioned before any user report ÷ all violations actioned",
+    "src": [
+      "act",
+      "det",
+      "rep"
+    ],
+    "steps": [
+      "Tag every action with its source: automated detection, proactive human review, or user report.",
+      "Count an action as proactive only if no user report on that object exists before the action time.",
+      "Report per policy area. Spam will sit near 100% and harassment much lower, and both can be healthy.",
+      "Read it next to precision. A rising proactive rate with falling precision means you are catching more innocent content."
+    ],
+    "q": "SELECT a.policy,\n  AVG(CASE WHEN NOT EXISTS (\n        SELECT 1 FROM user_reports r\n        WHERE r.object_id = a.object_id AND r.created_at < a.decided_at)\n      THEN 1.0 ELSE 0 END) AS proactive_rate\nFROM enforcement_actions a\nWHERE a.decided_at >= CURRENT_DATE - INTERVAL '28 days'\nGROUP BY a.policy;",
+    "cad": "Monthly",
+    "own": "Detection engineering",
+    "dir": "up",
+    "rv": "m",
+    "ex": "9,300 of 12,000 hate-speech actions happened before any report: a proactive rate of 77.5%.",
+    "mvp": "Tag each case \"found by us\" or \"reported by a user\" in your ticketing tool.",
+    "pair": "Precision and recall by policy area",
+    "platform_notes": {
+      "social": "Hash matching of known illegal images makes some areas near 100%. Report them separately so they don't hide weak areas.",
+      "market": "Checks run when a listing is created. Count listings blocked before going live as proactive.",
+      "gaming": "Chat filters that block a message before it's sent count as proactive, but log them separately from removals.",
+      "dating": "Screening at sign-up (photo checks, device risk) catches scammers before any match. Count those blocks.",
+      "genai": "Input and output classifiers act before the user sees anything, so most enforcement is proactive by design. Precision matters more here.",
+      "fintech": "Transaction monitoring acts before a payment settles. Count held or blocked payments as proactive.",
+      "gig": "Signals like route changes, unexpected long stops and crash detection are proactive. Count the interventions they trigger.",
+      "kids": "This matters most here because children rarely report. Track it separately for contact between adults and minors."
+    },
+    "scorecard_measure": [
+      "Proactive rate",
+      "%"
+    ]
+  },
+  {
+    "name": "Precision and recall by policy area",
+    "question": "When our systems act, are they right, and how much do they miss?",
+    "definition": "For each classifier and rule: how many of its actions were correct, and how much violating content it caught.",
+    "why": "Tells you where automation is safe to expand and where it isn't.",
+    "watch_out": "A blended figure hides failures in low-volume, high-severity areas.",
+    "area": "Detection",
+    "tier": "Health",
+    "platforms": "all",
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "precision = correct actions ÷ all actions; recall = violations caught ÷ all violations (estimated by sampling)",
+    "src": [
+      "qa",
+      "det",
+      "imp"
+    ],
+    "steps": [
+      "Precision: every week, sample each classifier's or rule's actions at random and have experts label them blind.",
+      "Recall: sample content the system did not flag, label it, and scale up the misses you find to estimate what you missed overall.",
+      "Report both per policy area and per model version, so a model change shows up immediately.",
+      "Set a precision floor per area (for example 95% for automatic removal) before automation can act without a human."
+    ],
+    "q": "-- Precision, from blind QA of automated actions\nSELECT a.policy, a.model_version,\n  AVG(CASE WHEN q.expert_label = 'violating' THEN 1.0 ELSE 0 END) AS precision_rate\nFROM qa_reviews q\nJOIN enforcement_actions a ON a.action_id = q.action_id\nWHERE a.source = 'automated'\nGROUP BY a.policy, a.model_version;\n-- Recall ≈ caught ÷ (caught + misses scaled up from the unflagged sample)",
+    "cad": "Weekly for precision, monthly for recall",
+    "own": "Detection engineering, with the quality team",
+    "dir": "up",
+    "rv": "m",
+    "ex": "372 of 400 sampled automated removals were correct: 93% precision. Labeling 20,000 of 10 million unflagged posts finds 9 misses, about 4,500 overall. With 18,000 caught, recall is about 80%.",
+    "mvp": "For precision, have a senior reviewer re-check 50 automated actions a week. Leave recall until you can sample.",
+    "pair": "Proactive detection rate",
+    "platform_notes": {
+      "social": "Measure per language as well as per policy. Classifiers usually do worst in languages with little training data.",
+      "market": "Measure precision on blocked listings per category, and learn from the evidence in upheld seller appeals.",
+      "gaming": "Voice classifiers need their own precision and recall. They behave differently from text.",
+      "genai": "Measure recall with your evaluation suite, and precision by sampling blocked prompts and outputs in production.",
+      "fintech": "Precision is the share of held or blocked payments that really were fraud. Every false positive is a customer who couldn't pay."
+    },
+    "scorecard_measure": [
+      "Precision, weakest policy area",
+      "%"
+    ]
+  },
+  {
+    "name": "Appeal overturn rate",
+    "question": "When someone appeals, how often were we wrong?",
+    "definition": "Share of appealed decisions that are reversed, by policy area and enforcement source.",
+    "why": "The clearest public signal of over-enforcement.",
+    "watch_out": "Few users appeal. A low rate with low appeal volume can hide errors.",
+    "area": "Decision quality",
+    "tier": "Health",
+    "platforms": "all",
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "appeals that reversed the decision ÷ appeals decided",
+    "src": [
+      "app",
+      "act"
+    ],
+    "steps": [
+      "Join each appeal to its original action, so you know the policy, source (automated or human), reviewer and vendor.",
+      "Count only decided appeals, and report overturns per policy area and per source.",
+      "Track the appeal rate too (appeals ÷ actions). A low overturn rate means little if almost nobody appeals.",
+      "Send every overturn back to the quality team as a training case."
+    ],
+    "q": "SELECT a.policy, a.source,\n  SUM(CASE WHEN ap.outcome = 'overturned' THEN 1 ELSE 0 END) * 1.0\n    / NULLIF(COUNT(ap.appeal_id), 0) AS overturn_rate,\n  COUNT(ap.appeal_id) * 1.0 / COUNT(*) AS appeal_rate\nFROM enforcement_actions a\nLEFT JOIN appeals ap\n  ON ap.action_id = a.action_id AND ap.resolved_at IS NOT NULL\nWHERE a.decided_at >= CURRENT_DATE - INTERVAL '90 days'\nGROUP BY a.policy, a.source;",
+    "cad": "Monthly",
+    "own": "Quality team, independent of operations",
+    "dir": "down",
+    "rv": "m",
+    "ex": "Automated nudity removals are overturned 22% of the time on appeal against 4% for human removals. That classifier's threshold is too aggressive.",
+    "mvp": "Tag appeal tickets upheld or overturned, and count them each month.",
+    "pair": "Proactive detection rate",
+    "platform_notes": {
+      "market": "Seller appeals often include evidence such as invoices or authenticity certificates. Track which evidence leads to overturns.",
+      "genai": "Most users can't appeal a refusal. If you add a \"this shouldn't have been blocked\" button, treat it as an appeal.",
+      "fintech": "Appeals are often complaints about frozen accounts or held payments. Measure how fast they are resolved, not only the outcome."
+    },
+    "scorecard_measure": [
+      "Overturn rate",
+      "%"
+    ]
+  },
+  {
+    "name": "QA agreement rate",
+    "question": "Do our reviewers make the same call an expert would?",
+    "definition": "Agreement between front-line decisions and expert re-review on a random sample.",
+    "why": "Your ground truth for reviewer and vendor quality.",
+    "watch_out": "Experts also disagree. Measure expert-to-expert agreement first.",
+    "area": "Decision quality",
+    "tier": "Health",
+    "platforms": "all",
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "sampled decisions where the expert agrees ÷ decisions sampled",
+    "src": [
+      "qa",
+      "act"
+    ],
+    "steps": [
+      "Each week, draw a random sample of decisions per queue and vendor, sized so each reviewer gets 20 to 30 checks a month.",
+      "Have experts re-label blind, without seeing the original decision or who made it.",
+      "Calibrate the experts first: have them label the same set and measure how often they agree with each other. That is your ceiling.",
+      "Report agreement per queue, vendor and policy area, and walk through the disagreements in a weekly calibration session."
+    ],
+    "q": "SELECT a.vendor, a.queue,\n  AVG(CASE WHEN q.expert_label = q.original_label THEN 1.0 ELSE 0 END) AS agreement,\n  COUNT(*) AS checks\nFROM qa_reviews q\nJOIN enforcement_actions a ON a.action_id = q.action_id\nWHERE q.sampled_at >= CURRENT_DATE - INTERVAL '28 days'\nGROUP BY a.vendor, a.queue;",
+    "cad": "Weekly",
+    "own": "Quality team",
+    "dir": "up",
+    "rv": "w",
+    "ex": "Vendor A agrees with experts 94% of the time and Vendor B 86%. Experts agree with each other 95%, so A is near the ceiling and B has a training gap.",
+    "mvp": "A lead re-reviews 10 random decisions per reviewer each week in a shared sheet.",
+    "pair": "SLA attainment",
+    "platform_notes": {},
+    "scorecard_measure": [
+      "Agreement with experts",
+      "%"
+    ]
+  },
+  {
+    "name": "Time to action by severity (p90)",
+    "question": "How fast do we act on the most serious problems?",
+    "definition": "Time from report or detection to decision, split by severity tier, reported at p50 and p90.",
+    "why": "Shows whether the most urgent harms are handled fastest.",
+    "watch_out": "Averages hide the long tail. The p90 is where incidents come from.",
+    "area": "Operations",
+    "tier": "Health",
+    "platforms": "all",
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "decided_at − first_seen_at, at p50 and p90 per severity tier",
+    "src": [
+      "act"
+    ],
+    "steps": [
+      "Fix one definition of when the clock starts: the first report or detection on that object, whichever came first.",
+      "Give every item a severity tier at intake (for example tier 1 for imminent harm and child safety, tier 4 for low-harm spam).",
+      "Report p50 and p90 per tier. Leadership should always see tier 1 first.",
+      "Exclude nothing silently. Show auto-closed or merged items as their own line."
+    ],
+    "q": "SELECT severity,\n  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY decided_at - first_seen_at) AS p50,\n  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY decided_at - first_seen_at) AS p90\nFROM enforcement_actions\nWHERE decided_at >= CURRENT_DATE - INTERVAL '7 days'\nGROUP BY severity\nORDER BY severity;",
+    "cad": "Daily for tier 1, weekly for the rest",
+    "own": "T&S operations",
+    "dir": "down",
+    "rv": "w",
+    "ex": "Tier 1 p50 is 12 minutes but p90 is 6 hours, because overnight reports wait for the morning shift. The fix is on-call coverage, not more reviewers.",
+    "mvp": "Your ticketing tool already stores created and closed times. Export them and use PERCENTILE in a spreadsheet.",
+    "pair": "QA agreement rate",
+    "platform_notes": {
+      "social": "Viral content needs action within minutes. Add speed of spread to your severity rules.",
+      "gaming": "Acting during the match matters most. A mute after the match ends does little for the victim.",
+      "dating": "Threats of violence and unsafe meetups should be tier 1, with a route to emergency help.",
+      "genai": "Most enforcement is automatic and instant. Measure time to action on user reports and red-team findings.",
+      "fintech": "For scams, speed is money: every hour before a payment is held lowers the chance of getting it back.",
+      "gig": "Safety reports during a live trip are tier 1 and need a real-time route, including emergency services.",
+      "kids": "Contact that looks like grooming is tier 1, with its own on-call route to child-safety specialists."
+    },
+    "scorecard_measure": [
+      "Tier 1 p90",
+      "hours"
+    ]
+  },
+  {
+    "name": "SLA attainment",
+    "question": "Do we hit the response times we promised?",
+    "definition": "Share of items decided within the target time for their tier.",
+    "why": "The operational commitment you report upward.",
+    "watch_out": "Teams hit SLAs by rushing. Watch QA agreement at the same time.",
+    "area": "Operations",
+    "tier": "Health",
+    "platforms": "all",
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "items decided within their tier's target ÷ items due",
+    "src": [
+      "act"
+    ],
+    "steps": [
+      "Write down a target per tier (for example tier 1 within 1 hour, tier 2 within 24 hours) and store it as a table, not in people's heads.",
+      "Join every decision to its target and mark it met or missed.",
+      "Count items still open past their target as misses. Otherwise a growing backlog makes attainment look better.",
+      "Report per tier, queue and vendor."
+    ],
+    "q": "SELECT a.severity, a.vendor,\n  AVG(CASE WHEN a.decided_at - a.first_seen_at <= s.target THEN 1.0 ELSE 0 END)\n    AS sla_attainment\nFROM enforcement_actions a\nJOIN sla_targets s ON s.severity = a.severity\nWHERE a.decided_at >= CURRENT_DATE - INTERVAL '7 days'\nGROUP BY a.severity, a.vendor;\n-- Then add open items already past target as misses",
+    "cad": "Weekly",
+    "own": "T&S operations and vendor management",
+    "dir": "up",
+    "rv": "w",
+    "ex": "Tier 2 attainment is 97% on decided items, but 1,400 items are open past target. Counted properly, it is 88%.",
+    "mvp": "Set a target for your most severe category first, and count the misses each week.",
+    "pair": "QA agreement rate",
+    "platform_notes": {},
+    "scorecard_measure": [
+      "Attainment, all tiers",
+      "%"
+    ]
+  },
+  {
+    "name": "Graphic-exposure hours per reviewer",
+    "question": "How much disturbing content is each reviewer seeing?",
+    "definition": "Hours per reviewer per week spent on graphic or egregious content queues.",
+    "why": "The most direct wellness risk you control.",
+    "watch_out": "Averages hide individuals. Cap and monitor each person.",
+    "area": "People",
+    "tier": "Health",
+    "platforms": "all",
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "hours in graphic or egregious queues per reviewer per week",
+    "src": [
+      "ppl"
+    ],
+    "steps": [
+      "Tag each queue with an exposure level. Graphic violence, child safety and self-harm are high.",
+      "Log time in queue per reviewer from your case tool, not from self-reporting.",
+      "Agree a weekly cap per person with your wellness partner, and alert team leads when anyone approaches it.",
+      "Report the distribution and the number of people over the cap, never only the team average."
+    ],
+    "q": "SELECT week,\n  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY graphic_hours) AS p90_hours,\n  COUNT(*) FILTER (WHERE graphic_hours > 15) AS reviewers_over_cap  -- 15 = your agreed cap\nFROM reviewer_weeks\nGROUP BY week\nORDER BY week DESC;",
+    "cad": "Weekly",
+    "own": "T&S leadership, with wellness partners",
+    "dir": "down",
+    "rv": "w",
+    "ex": "The team averages 9 hours a week, but 6 people passed the 15-hour cap because they were the only ones trained for the child-safety queue. The fix is cross-training.",
+    "mvp": "Rotate people off graphic queues on a fixed schedule, and keep a simple rota log.",
+    "pair": "Attrition and wellness-support usage",
+    "platform_notes": {
+      "gaming": "Voice review can be as hard as graphic video. Count it in exposure hours.",
+      "genai": "Red-teamers and evaluation graders are exposed too. Include them in caps and wellness support.",
+      "kids": "Child-safety queues carry the highest exposure. Rotate reviewers and cap hours strictly."
+    },
+    "scorecard_measure": [
+      "People over the weekly cap",
+      "people"
+    ]
+  },
+  {
+    "name": "Statement-of-reasons coverage",
+    "question": "When we restrict someone, do we properly tell them why?",
+    "definition": "Share of restrictive actions that come with a compliant explanation to the user.",
+    "why": "A core obligation under the EU Digital Services Act and a common audit finding.",
+    "watch_out": "Templated reasons that don't name the specific policy don't count.",
+    "area": "Compliance",
+    "tier": "Health",
+    "platforms": "all",
+    "from_stage": 1,
+    "regulated_only": true,
+    "f": "restrictive actions with a compliant statement of reasons ÷ restrictive actions",
+    "src": [
+      "act",
+      "legal"
+    ],
+    "steps": [
+      "List which actions are restrictive: removal, demotion or reduced visibility, demonetization, suspension and termination.",
+      "Log whether a statement was sent for each one, and whether it named the specific policy or law, the facts, any use of automation, and how to appeal.",
+      "Each month, sample 100 statements and check them against that list, not just whether one was sent.",
+      "If you are an online platform under the DSA, reconcile your counts with what you submit to the DSA Transparency Database."
+    ],
+    "q": "SELECT action,\n  AVG(CASE WHEN sor_sent AND sor_names_policy AND sor_has_appeal_info\n      THEN 1.0 ELSE 0 END) AS compliant_coverage\nFROM enforcement_actions\nWHERE action IN ('remove', 'demote', 'demonetize', 'suspend', 'terminate')\n  AND decided_at >= CURRENT_DATE - INTERVAL '28 days'\nGROUP BY action;",
+    "cad": "Monthly",
+    "own": "Compliance, with T&S operations",
+    "dir": "up",
+    "rv": "m",
+    "ex": "Statements go out for 99% of removals but only 40% of demotions, because demotions were never wired to the notice system. That is an audit finding waiting to happen.",
+    "mvp": "Each month, audit 25 enforcement notices against a four-point checklist.",
+    "pair": "Appeal overturn rate",
+    "platform_notes": {
+      "social": "Demotions and reduced visibility need statements too. That is where most teams fall short.",
+      "market": "Listing removals, seller restrictions and held payments all need statements."
+    },
+    "scorecard_measure": [
+      "Compliant coverage",
+      "%"
+    ]
+  },
+  {
+    "name": "Illegal-content notice handling time",
+    "question": "How fast do we respond when someone formally reports illegal content?",
+    "definition": "Time from a legal notice (for example a trusted flagger or authority) to decision.",
+    "why": "Regulators expect prompt, prioritized handling.",
+    "watch_out": "Trusted-flagger notices need their own queue and SLA.",
+    "area": "Compliance",
+    "tier": "Health",
+    "platforms": "all",
+    "from_stage": 1,
+    "regulated_only": true,
+    "f": "decided_at − received_at for legal notices, at p50 and p90, per notice source",
+    "src": [
+      "legal"
+    ],
+    "steps": [
+      "Route every legal notice (user notices of illegal content, trusted flaggers, authorities, court orders) into one intake that stamps the time received.",
+      "Tag the source type, so trusted-flagger and authority notices can be prioritized and measured on their own.",
+      "Record the decision time, and whether the notifier was told the outcome.",
+      "Report p50 and p90 per source, and the share handled within your internal target."
+    ],
+    "q": "SELECT source_type,\n  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY decided_at - received_at) AS p50,\n  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY decided_at - received_at) AS p90,\n  COUNT(*) AS notices\nFROM legal_notices\nWHERE received_at >= CURRENT_DATE - INTERVAL '28 days'\nGROUP BY source_type;",
+    "cad": "Weekly",
+    "own": "Legal operations, with T&S",
+    "dir": "down",
+    "rv": "w",
+    "ex": "Trusted-flagger notices take 30 hours at p90 because they sit in the general queue. A dedicated queue brings that down to 4.",
+    "mvp": "Use a dedicated inbox for legal notices, and log received and answered times in a sheet.",
+    "pair": "Statement-of-reasons coverage",
+    "platform_notes": {
+      "social": "Notices spike during elections and crises. Plan extra capacity for trusted flaggers at those times.",
+      "market": "Many notices are brand complaints about counterfeits. Track intellectual-property notices separately from other illegal content."
+    },
+    "scorecard_measure": [
+      "Trusted-flagger notices, p90",
+      "hours"
+    ]
+  },
+  {
+    "name": "Age-assurance coverage",
+    "question": "Do we actually know which of our users are children?",
+    "definition": "Share of active users whose age was checked by something stronger than a typed date of birth, and how many under-age users were found.",
+    "why": "Every child-safety protection depends on knowing who is a child. Regulators such as Ofcom now expect highly effective age checks where children could see the most harmful content.",
+    "watch_out": "Self-declared age is not age assurance. Counting it inflates coverage.",
+    "area": "Detection",
+    "tier": "Health",
+    "platforms": [
+      "kids",
+      "social",
+      "gaming",
+      "dating"
+    ],
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "active users with an age check stronger than self-declaration ÷ active users",
+    "src": [
+      "use",
+      "act"
+    ],
+    "steps": [
+      "List the age signals you use and rank them by strength: typed date of birth, age estimation (face or behavior), ID document, parent or school verification.",
+      "Store the strongest method and its date on each account, and count only active accounts.",
+      "Report coverage per method, and how many under-age accounts were found and removed or moved to a teen experience.",
+      "Sample accounts marked as adults and check how often the method was wrong."
+    ],
+    "q": "SELECT age_method,  -- 'self_declared', 'estimation', 'id_document', 'parental'\n  COUNT(*) * 1.0 / SUM(COUNT(*)) OVER () AS share_of_active\nFROM accounts\nWHERE last_active_at >= CURRENT_DATE - INTERVAL '28 days'\nGROUP BY age_method;",
+    "cad": "Monthly",
+    "own": "T&S, with identity and product",
+    "dir": "up",
+    "rv": "m",
+    "ex": "Only 29% of active users have an age check stronger than a typed date of birth. Adding age estimation at sign-up raises that to 64% and finds 3,100 likely under-13 accounts in the first month.",
+    "mvp": "Count how many active accounts have anything stronger than a typed date of birth. That is your starting point.",
+    "pair": "Unsafe-contact rate for minors",
+    "platform_notes": {
+      "kids": "Also measure the reverse: adults pretending to be children, which is how many grooming cases begin.",
+      "social": "Report coverage separately for surfaces where children could see the most harmful content.",
+      "gaming": "Voice and open chat often depend on age. Report coverage for players who use them.",
+      "dating": "Your aim is to keep minors out entirely. Report how many under-18 accounts you found and how."
+    },
+    "scorecard_measure": [
+      "Coverage",
+      "%"
+    ]
+  },
+  {
+    "name": "Time to report child sexual exploitation",
+    "question": "How quickly do we report child exploitation to the authorities?",
+    "definition": "Time from confirming apparent child sexual abuse material or exploitation to filing the required report with the authorities (in the US, the NCMEC CyberTipline).",
+    "why": "US law requires providers to report apparent child sexual exploitation to NCMEC as soon as reasonably possible, and every hour can matter to a child at risk.",
+    "watch_out": "A fast report with thin detail helps nobody. Track how complete each report is, not just how quick.",
+    "area": "Compliance",
+    "tier": "Health",
+    "platforms": "all",
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "reported_at − confirmed_at for each report, at p50 and p90",
+    "src": [
+      "act",
+      "det",
+      "legal"
+    ],
+    "steps": [
+      "Route every hash match and every reviewer escalation of suspected child sexual abuse material or exploitation into one specialist queue that stamps the time a case is confirmed.",
+      "File the report (in the US, through the NCMEC CyberTipline) with every required field, and log the time filed and the report ID.",
+      "Preserve the content and account data as the law requires, and log that preservation happened.",
+      "Report p50 and p90 time to report, the share filed within your internal target (for example 24 hours), and how complete reports were."
+    ],
+    "q": "SELECT DATE_TRUNC('month', confirmed_at) AS month,\n  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY reported_at - confirmed_at) AS p50,\n  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY reported_at - confirmed_at) AS p90,\n  AVG(CASE WHEN reported_at - confirmed_at <= INTERVAL '24 hours'\n      THEN 1.0 ELSE 0 END) AS within_24h\nFROM child_safety_reports\nGROUP BY 1\nORDER BY 1 DESC;",
+    "cad": "Weekly with legal; every case tracked individually",
+    "own": "Child-safety team, with legal",
+    "dir": "down",
+    "rv": "w",
+    "ex": "Median time to report is 6 hours, but p90 is 3 days because weekend cases wait for a specialist. A weekend on-call rota brings p90 under 24 hours.",
+    "mvp": "Keep a log of every child-safety report: when you confirmed it, when you filed it, and the report ID.",
+    "pair": "Proactive detection rate",
+    "platform_notes": {
+      "social": "Most cases come from hash matching of known images. Track new, never-seen material separately: it needs expert review and is often more urgent.",
+      "kids": "Cases may involve your own young users. Pair every report with a safeguarding review of the child's account.",
+      "genai": "Include attempts to generate sexual content involving minors, and preserve the prompts as well as any outputs."
+    },
+    "scorecard_measure": [
+      "Time to report, p90",
+      "hours"
+    ]
+  },
+  {
+    "name": "Good users wrongly actioned",
+    "question": "How many innocent users do we hurt by mistake?",
+    "definition": "Share of active, legitimate users who had content removed, an account restricted or a payment blocked by mistake during the period.",
+    "why": "Over-enforcement drives away the users you most want to keep, and it rarely shows up on safety dashboards.",
+    "watch_out": "Most wrongly actioned users never appeal; they just leave. Estimate it from QA samples, not only from overturned appeals.",
+    "area": "Decision quality",
+    "tier": "Health",
+    "platforms": "all",
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "legitimate users wrongly actioned ÷ active users",
+    "src": [
+      "qa",
+      "app",
+      "act",
+      "use"
+    ],
+    "steps": [
+      "Estimate wrong actions per policy: the error rate from blind QA samples multiplied by the number of actions, plus overturned appeals.",
+      "Count the unique users affected, not the number of actions.",
+      "Divide by active users for the same period.",
+      "Follow what happened to those users next (retention, support contacts, spend) to show the cost of mistakes."
+    ],
+    "q": "SELECT DATE_TRUNC('month', a.decided_at) AS month,\n  COUNT(DISTINCT a.account_id) FILTER (\n    WHERE ap.outcome = 'overturned' OR q.expert_label = 'not_violating'\n  ) * 1.0 / MAX(u.active_users) AS known_wrong_share\nFROM enforcement_actions a\nLEFT JOIN appeals ap ON ap.action_id = a.action_id\nLEFT JOIN qa_reviews q ON q.action_id = a.action_id\nJOIN monthly_active u ON u.month = DATE_TRUNC('month', a.decided_at)\nGROUP BY 1;\n-- Counts known errors only. Scale up by the QA error rate for unchecked actions.",
+    "cad": "Monthly",
+    "own": "Quality team, with product analytics",
+    "dir": "down",
+    "rv": "m",
+    "ex": "QA finds 4% of 250,000 monthly actions are wrong: about 10,000 actions hitting 7,500 users. That is 0.25% of 3 million active users, and they leave at twice the normal rate.",
+    "mvp": "Count unique users with an overturned appeal each month. It is a floor, not the full number, but it starts the conversation.",
+    "pair": "Proactive detection rate",
+    "platform_notes": {
+      "fintech": "Include blocked or held legitimate payments and wrongly frozen accounts. These are the most damaging mistakes.",
+      "market": "Include good sellers whose listings were removed or payouts held by mistake.",
+      "genai": "Count accounts wrongly suspended, alongside over-refusal of individual prompts.",
+      "gaming": "Include false bans from anti-cheat and chat filters, which often hit your most active players."
+    },
+    "scorecard_measure": [
+      "Active users wrongly actioned",
+      "%"
+    ]
+  },
+  {
+    "name": "Churn after toxic exposure",
+    "question": "Do people quit after they've been abused?",
+    "definition": "Retention gap between users who experienced a confirmed incident and matched users who didn't.",
+    "why": "The most persuasive metric for executives: safety is retention.",
+    "watch_out": "This is correlation. Use matched cohorts before you claim causation.",
+    "area": "Harm outcomes",
+    "tier": "Diagnostic",
+    "platforms": [
+      "gaming",
+      "social",
+      "dating",
+      "kids"
+    ],
+    "from_stage": 3,
+    "regulated_only": false,
+    "f": "30-day retention of matched unexposed users − 30-day retention of exposed users",
+    "src": [
+      "act",
+      "use"
+    ],
+    "steps": [
+      "Define exposure: the user was the target of a confirmed incident, not only someone who reported one.",
+      "For each exposed user, pick an unexposed user with similar tenure, activity, region and device (a matched cohort).",
+      "Compare the share of each group still active 30 days later.",
+      "Repeat every quarter. Present it as a range, and call it an association unless you have run a proper causal analysis."
+    ],
+    "q": "SELECT cohort,  -- 'exposed' or 'matched_control'\n  AVG(CASE WHEN active_day_30 THEN 1.0 ELSE 0 END) AS retention_30d,\n  COUNT(*) AS users\nFROM exposure_cohorts\nWHERE cohort_month = DATE_TRUNC('month', CURRENT_DATE - INTERVAL '2 months')\nGROUP BY cohort;",
+    "cad": "Quarterly",
+    "own": "Data science",
+    "dir": "down",
+    "rv": "q",
+    "ex": "Exposed players retain at 52% after 30 days against 61% for matched players. A 9-point gap across 20,000 exposed players a month is a number a CFO understands.",
+    "mvp": "Compare the 30-day retention of players who filed a harassment report with everyone else. Rough, but directional.",
+    "pair": "Toxicity per 1,000 match-hours",
+    "platform_notes": {
+      "gaming": "Use days-played retention, and match players on skill rank. Ranked players are targeted and churn differently.",
+      "social": "Use 30-day active retention, and match on audience size. Larger accounts are targeted more and churn differently.",
+      "dating": "Focus on users harassed in their first week. That's when a bad experience makes people delete the app.",
+      "kids": "Involve your privacy team, report only aggregates, and include parents who close accounts after an incident."
+    },
+    "scorecard_measure": [
+      "Retention gap",
+      "points"
+    ]
+  },
+  {
+    "name": "User-report rate",
+    "question": "How often do users flag problems to us?",
+    "definition": "User reports per 1,000 daily active users, by policy area.",
+    "why": "Cheap and fast to compute. A useful early-warning signal.",
+    "watch_out": "It rises when reporting gets easier. That can mean better UX, not more harm.",
+    "area": "Harm outcomes",
+    "tier": "Diagnostic",
+    "platforms": "all",
+    "from_stage": 1,
+    "regulated_only": false,
+    "f": "user reports ÷ daily active users × 1,000, per policy area",
+    "src": [
+      "rep",
+      "use"
+    ],
+    "steps": [
+      "Count reports, and separately count unique items reported. One viral item can draw thousands of reports.",
+      "Divide by daily active users for the same day and region.",
+      "Annotate the chart with every change to the reporting flow. UX changes move this number on their own.",
+      "Alert on a sudden spike in one reason. It is often the first sign of a new trend or a brigading campaign."
+    ],
+    "q": "SELECT r.day, r.reason,\n  1000.0 * r.reports / u.dau AS reports_per_1k_dau,\n  r.unique_items\nFROM (SELECT DATE(created_at) AS day, reason,\n        COUNT(*) AS reports, COUNT(DISTINCT object_id) AS unique_items\n      FROM user_reports GROUP BY 1, 2) r\nJOIN daily_usage u ON u.day = r.day;",
+    "cad": "Daily dashboard, weekly review",
+    "own": "T&S operations",
+    "dir": "band",
+    "rv": "w",
+    "ex": "Reports per 1,000 DAU jump from 4 to 9 overnight, but unique items barely move. It is a brigading campaign against a few accounts, not a rise in harm.",
+    "mvp": "Most ticketing tools can chart tickets per day by reason. Divide by DAU in a spreadsheet.",
+    "pair": "Violating-content prevalence",
+    "platform_notes": {
+      "social": "Split reports on posts from reports on accounts. Brigading shows up as many reports against one account.",
+      "market": "Separate reports on listings from disputes about orders. Disputes belong with customer-support metrics.",
+      "gaming": "Players often report the other team after losing. Compare report rates from winning and losing sides to measure that bias.",
+      "dating": "Unmatch-and-report is the main signal. Track reports per conversation, not only per user.",
+      "genai": "Users rarely report harmful outputs. Add a thumbs-down with a \"harmful\" reason and treat it as a weak signal.",
+      "fintech": "Reports arrive mostly through support calls and chat. Tag those contacts, or this metric will be close to zero.",
+      "gig": "Most reports arrive after the trip, in ratings and support tickets. Count low ratings with safety reasons as reports.",
+      "kids": "Children under-report. Count reports from parents and teachers too, and make the report button easy for young users to find and understand."
+    },
+    "scorecard_measure": [
+      "Reports per 1,000 DAU",
+      "rate"
+    ]
+  },
+  {
+    "name": "Repeat-offender rate",
+    "question": "After we act, do people stop breaking the rules or keep going?",
+    "definition": "Share of enforcement actions against accounts with a prior violation within 90 days.",
+    "why": "Tests whether your penalty ladder actually changes behavior.",
+    "watch_out": "Ban evasion hides repeat offenders behind new accounts.",
+    "area": "Harm outcomes",
+    "tier": "Diagnostic",
+    "platforms": "all",
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "actions on accounts with a prior violation in the last 90 days ÷ all actions",
+    "src": [
+      "act"
+    ],
+    "steps": [
+      "For each action, look back 90 days on the same account for an earlier confirmed violation.",
+      "Split by the earlier penalty (warning, restriction, suspension) to see which penalties actually deter.",
+      "Link accounts by device, payment and contact signals where your privacy policy allows, so ban evasion is counted.",
+      "Report per policy area. Spam and harassment behave very differently."
+    ],
+    "q": "SELECT a.policy,\n  AVG(CASE WHEN EXISTS (\n        SELECT 1 FROM enforcement_actions p\n        WHERE p.account_id = a.account_id\n          AND p.decided_at <  a.decided_at\n          AND p.decided_at >= a.decided_at - INTERVAL '90 days')\n      THEN 1.0 ELSE 0 END) AS repeat_share\nFROM enforcement_actions a\nWHERE a.decided_at >= CURRENT_DATE - INTERVAL '28 days'\nGROUP BY a.policy;",
+    "cad": "Monthly",
+    "own": "Policy, with T&S operations",
+    "dir": "down",
+    "rv": "m",
+    "ex": "31% of harassment actions hit accounts warned in the last 90 days, but only 8% follow a 7-day suspension. Warnings are not deterring anyone.",
+    "mvp": "Add a \"prior strike in the last 90 days?\" checkbox to your case form.",
+    "pair": "Appeal overturn rate",
+    "platform_notes": {
+      "social": "Link accounts by device and phone number to catch people who return after a ban.",
+      "market": "Sellers come back under new store names. Link by payout bank account, which is hard to replace.",
+      "gaming": "New accounts are free. Link by hardware ID and payment method.",
+      "dating": "Link by phone number, device and photo matching. Banned scammers often reuse the same photos.",
+      "genai": "Track accounts and API keys that repeatedly hit policy blocks. They are often probing for a jailbreak.",
+      "fintech": "Link by identity document, device and bank details. Returning fraudsters often use mule accounts in real people's names.",
+      "gig": "Deactivated workers come back through someone else's account. Real-time selfie checks catch it."
+    },
+    "scorecard_measure": [
+      "Repeat share of actions",
+      "%"
+    ]
+  },
+  {
+    "name": "Time to detect emerging trends",
+    "question": "How long does a new kind of abuse run before we notice it?",
+    "definition": "Time from a new harmful trend's first appearance to its formal triage.",
+    "why": "Crises are usually won or lost in this window.",
+    "watch_out": "Hard to measure without post-incident reviews. Log it in every one.",
+    "area": "Detection",
+    "tier": "Diagnostic",
+    "platforms": "all",
+    "from_stage": 3,
+    "regulated_only": false,
+    "f": "formal triage time − time the first related item appeared",
+    "src": [
+      "inc"
+    ],
+    "steps": [
+      "After every incident or new trend, search back for the earliest related item: the first post, listing or account using the pattern.",
+      "Record three timestamps in the incident log: first appearance, first internal signal (a report spike, alert or analyst note) and formal triage.",
+      "Report the median across incidents each quarter, with the signal-to-triage gap shown on its own.",
+      "The signal-to-triage gap is usually the fastest to fix. It is about alerting and on-call, not detection."
+    ],
+    "q": "SELECT DATE_TRUNC('quarter', triaged_at) AS quarter,\n  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY triaged_at - first_item_at)\n    AS median_time_to_detect,\n  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY triaged_at - first_signal_at)\n    AS median_signal_to_triage\nFROM incidents\nGROUP BY 1 ORDER BY 1;",
+    "cad": "Quarterly, filled in at every post-incident review",
+    "own": "Intelligence or threat analysis",
+    "dir": "down",
+    "rv": "q",
+    "ex": "A new scam script first appeared 11 days before triage, but reports spiked on day 3. The fix was an alert on report spikes, not a new classifier.",
+    "mvp": "Add \"When did this actually start?\" to your post-incident template.",
+    "pair": "User-report rate",
+    "platform_notes": {
+      "social": "Trends follow the news. Keep an events calendar and watch report spikes around elections, conflicts and viral challenges.",
+      "market": "Watch for new listing keywords and bursts of new sellers in one category. That is how counterfeit waves start.",
+      "gaming": "New exploits and scams follow game updates and item drops. Check signals closely in the days after each release.",
+      "genai": "New jailbreaks spread on public forums and social media. Someone should check them daily.",
+      "fintech": "New scam scripts show up first in customer-support contacts. Tag and review them weekly."
+    },
+    "scorecard_measure": [
+      "Median time to detect",
+      "days"
+    ]
+  },
+  {
+    "name": "Consistency across languages and markets",
+    "question": "Are we as accurate in every language as we are in our best one?",
+    "definition": "QA agreement and overturn rates broken out by language and region.",
+    "why": "Enforcement gaps usually show up in languages with the fewest resources first.",
+    "watch_out": "Small markets have tiny samples. Pool data by quarter.",
+    "area": "Decision quality",
+    "tier": "Diagnostic",
+    "platforms": "all",
+    "from_stage": 3,
+    "regulated_only": false,
+    "f": "QA agreement and overturn rate per language, compared with your best language",
+    "src": [
+      "qa",
+      "app",
+      "act"
+    ],
+    "steps": [
+      "Add language and market fields to every QA and appeal record.",
+      "Make sure each major language has qualified native-speaker experts. Machine-translated QA is not reliable.",
+      "Pool small languages by quarter until each has at least 100 checks.",
+      "Chart each language's gap to your best one, and flag anything more than 5 points behind."
+    ],
+    "q": "SELECT a.language,\n  AVG(CASE WHEN q.expert_label = q.original_label THEN 1.0 ELSE 0 END) AS agreement,\n  COUNT(*) AS checks\nFROM qa_reviews q\nJOIN enforcement_actions a ON a.action_id = q.action_id\nWHERE q.sampled_at >= DATE_TRUNC('quarter', CURRENT_DATE)\nGROUP BY a.language\nHAVING COUNT(*) >= 100\nORDER BY agreement;",
+    "cad": "Quarterly",
+    "own": "Quality team, with regional policy leads",
+    "dir": "up",
+    "rv": "q",
+    "ex": "English agreement is 93%, Arabic 81% and Tagalog 76%. The Tagalog queue is staffed by a vendor without native reviewers.",
+    "mvp": "Start by comparing your top two languages only.",
+    "pair": "Appeal overturn rate",
+    "platform_notes": {},
+    "scorecard_measure": [
+      "Gap to your best language",
+      "points"
+    ]
+  },
+  {
+    "name": "Backlog age",
+    "question": "Is work piling up faster than we can handle it?",
+    "definition": "Age distribution of unreviewed items by queue.",
+    "why": "Your early warning for a capacity problem.",
+    "watch_out": "Queue size alone misleads. One old severe item outweighs many new minor ones.",
+    "area": "Operations",
+    "tier": "Diagnostic",
+    "platforms": "all",
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "now − first_seen_at for every open item, shown as a distribution per queue",
+    "src": [
+      "act"
+    ],
+    "steps": [
+      "Snapshot every open item in every queue at the same time each day.",
+      "Bucket by age: under 1 day, 1 to 7 days, over 7 days (add an under-1-hour bucket for tier 1).",
+      "Weight by severity. One tier 1 item aged two days is an incident; 5,000 tier 4 items aged two days may be fine.",
+      "Chart the oldest bucket over time. It shows a capacity problem weeks before SLAs collapse."
+    ],
+    "q": "SELECT queue, severity,\n  COUNT(*) FILTER (WHERE NOW() - first_seen_at < INTERVAL '1 day') AS under_1d,\n  COUNT(*) FILTER (WHERE NOW() - first_seen_at\n                   BETWEEN INTERVAL '1 day' AND INTERVAL '7 days') AS d1_to_7,\n  COUNT(*) FILTER (WHERE NOW() - first_seen_at > INTERVAL '7 days') AS over_7d\nFROM open_queue_items\nGROUP BY queue, severity;",
+    "cad": "Daily snapshot",
+    "own": "Workforce management",
+    "dir": "down",
+    "rv": "w",
+    "ex": "Items older than 7 days grew from 300 to 2,100 in three weeks while total queue size stayed flat. Reviewers were picking the easy items first.",
+    "mvp": "Each morning, note the age of the oldest item in each queue.",
+    "pair": "SLA attainment",
+    "platform_notes": {},
+    "scorecard_measure": [
+      "Items older than 7 days",
+      "items"
+    ]
+  },
+  {
+    "name": "Cost per decision",
+    "question": "What does each moderation decision cost us?",
+    "definition": "Fully loaded review cost divided by decisions, by queue and vendor.",
+    "why": "Needed to defend budget and compare vendors.",
+    "watch_out": "Optimizing it alone lowers quality. Always show it next to QA agreement.",
+    "area": "Operations",
+    "tier": "Diagnostic",
+    "platforms": "all",
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "fully loaded review cost ÷ decisions made, per queue and vendor",
+    "src": [
+      "ppl",
+      "act"
+    ],
+    "steps": [
+      "Collect the monthly cost per queue: vendor invoices, internal salaries and benefits, tooling and licences, QA and management overhead.",
+      "Count human decisions per queue for the same month.",
+      "Show human-only and blended (human plus automated) cost per decision separately.",
+      "Put it next to QA agreement on every slide, so nobody optimizes cost on its own."
+    ],
+    "q": "SELECT c.month, c.queue, c.vendor,\n  c.total_cost / NULLIF(d.decisions, 0) AS cost_per_decision\nFROM monthly_queue_costs c\nJOIN (SELECT DATE_TRUNC('month', decided_at) AS month, queue, vendor,\n        COUNT(*) AS decisions\n      FROM enforcement_actions\n      WHERE source <> 'automated'\n      GROUP BY 1, 2, 3) d\n  ON d.month = c.month AND d.queue = c.queue AND d.vendor = c.vendor;",
+    "cad": "Monthly",
+    "own": "T&S operations, with Finance",
+    "dir": "band",
+    "rv": "m",
+    "ex": "Vendor B costs $0.38 a decision against $0.52 for Vendor A, but agrees with experts 8 points less often. Rework and appeals make B the more expensive choice.",
+    "mvp": "Divide each monthly vendor invoice by the number of decisions it covered.",
+    "pair": "QA agreement rate",
+    "platform_notes": {
+      "genai": "Include the compute cost of classifiers when you compare automated and human review."
+    },
+    "scorecard_measure": [
+      "Cost per human decision",
+      "USD"
+    ]
+  },
+  {
+    "name": "Attrition and wellness-support usage",
+    "question": "Are we burning out the people who keep users safe?",
+    "definition": "Reviewer attrition rate plus uptake of counseling and wellness programs.",
+    "why": "Attrition destroys expertise and QA scores, and it is expensive.",
+    "watch_out": "Low support uptake can mean stigma, not good health. Ask anonymously.",
+    "area": "People",
+    "tier": "Diagnostic",
+    "platforms": "all",
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "monthly leavers ÷ average headcount × 12; support sessions per person per month",
+    "src": [
+      "ppl"
+    ],
+    "steps": [
+      "Get monthly headcount and leavers from HR and from each vendor, split by queue exposure level.",
+      "Annualize it: monthly leavers ÷ average headcount × 12.",
+      "Get support usage from your wellness provider as anonymous, aggregated counts only.",
+      "Run an anonymous pulse survey every quarter. It explains what the numbers cannot."
+    ],
+    "q": "SELECT month, exposure_level,\n  12.0 * leavers / NULLIF(avg_headcount, 0) AS annualized_attrition,\n  support_sessions * 1.0 / NULLIF(avg_headcount, 0) AS sessions_per_person\nFROM monthly_workforce  -- aggregated; no individual-level data\nORDER BY month DESC;",
+    "cad": "Monthly, with a quarterly survey",
+    "own": "T&S leadership, with HR",
+    "dir": "down",
+    "rv": "q",
+    "ex": "High-exposure queues lose 4 people a month from an average of 60: 80% annualized attrition, against 25% elsewhere. Each leaver takes months of training with them.",
+    "mvp": "Track leavers per quarter against headcount, and ask your vendors for the same figures.",
+    "pair": "Graphic-exposure hours per reviewer",
+    "platform_notes": {},
+    "scorecard_measure": [
+      "Annualized attrition",
+      "%"
+    ]
+  },
+  {
+    "name": "Systemic-risk assessment currency",
+    "question": "Are our legally required risk assessments up to date?",
+    "definition": "Months since each required risk assessment was last updated, with the status of each mitigation.",
+    "why": "Regulators test whether your mitigations are real and tracked.",
+    "watch_out": "Assessments written once for compliance go stale within a year.",
+    "area": "Compliance",
+    "tier": "Diagnostic",
+    "platforms": "all",
+    "from_stage": 2,
+    "regulated_only": true,
+    "f": "days since each required risk assessment was reviewed; share of mitigations overdue",
+    "src": [
+      "legal"
+    ],
+    "steps": [
+      "Keep a register of every required assessment (for example DSA systemic-risk assessments, or Online Safety Act illegal-content and children's risk assessments) with an owner and last review date.",
+      "Link each risk to its mitigations, each with an owner, due date and status.",
+      "Trigger a re-review on any major product change, not only on the calendar.",
+      "Report the oldest assessment and the share of mitigations overdue."
+    ],
+    "q": "SELECT r.assessment, r.owner, r.last_reviewed,\n  CURRENT_DATE - r.last_reviewed AS days_since_review,\n  AVG(CASE WHEN m.status = 'overdue' THEN 1.0 ELSE 0 END) AS share_overdue\nFROM risk_register r\nLEFT JOIN mitigations m ON m.assessment_id = r.assessment_id\nGROUP BY r.assessment, r.owner, r.last_reviewed\nORDER BY days_since_review DESC;",
+    "cad": "Monthly check; full review yearly or on any major product change",
+    "own": "Compliance or risk",
+    "dir": "down",
+    "rv": "q",
+    "ex": "The children's risk assessment was last reviewed 14 months ago, before direct messaging launched. It needs a re-review now, not at the next annual cycle.",
+    "mvp": "One spreadsheet: risk, owner, mitigation, due date, status, last reviewed.",
+    "pair": "Illegal-content notice handling time",
+    "platform_notes": {
+      "kids": "Under the UK Online Safety Act, services likely to be used by children must keep a children's risk assessment up to date."
+    },
+    "scorecard_measure": [
+      "Oldest assessment",
+      "months"
+    ]
+  },
+  {
+    "name": "Law-enforcement request handling",
+    "question": "Do we handle police and government requests fast and carefully?",
+    "definition": "Time to respond to law-enforcement and government requests for user data or removal, and the share disclosed, narrowed or rejected after review.",
+    "why": "Fast help in emergencies can save lives, and careful review of every request protects users from overreach. Both go in your transparency report.",
+    "watch_out": "Speed without legal review creates risk. Measure emergency requests separately from routine ones.",
+    "area": "Compliance",
+    "tier": "Diagnostic",
+    "platforms": "all",
+    "from_stage": 2,
+    "regulated_only": false,
+    "f": "responded_at − received_at per request, with the share disclosed, narrowed or rejected",
+    "src": [
+      "le"
+    ],
+    "steps": [
+      "Log every request in one intake: type (emergency, subpoena, court order, removal demand), country, agency and time received.",
+      "Send emergencies (imminent risk of death or serious injury) to an on-call responder with a target measured in hours.",
+      "Have legal review every routine request for validity and scope, and record the outcome: disclosed, narrowed or rejected.",
+      "Report volumes, outcomes and response times by country. This is what transparency reports publish."
+    ],
+    "q": "SELECT type, country,\n  COUNT(*) AS requests,\n  PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY responded_at - received_at) AS p90_response,\n  AVG(CASE WHEN outcome IN ('narrowed', 'rejected') THEN 1.0 ELSE 0 END) AS pushed_back\nFROM le_requests\nWHERE received_at >= CURRENT_DATE - INTERVAL '90 days'\nGROUP BY type, country;",
+    "cad": "Monthly; emergencies tracked case by case",
+    "own": "Legal (law-enforcement response)",
+    "dir": "down",
+    "rv": "q",
+    "ex": "Emergency requests are answered in 2 hours at p90 and routine ones in 12 days. 18% were narrowed or rejected after legal review, which goes in your transparency report.",
+    "mvp": "A shared inbox for legal requests, and a sheet logging type, country, received, answered and outcome.",
+    "pair": "Time to report child sexual exploitation",
+    "platform_notes": {
+      "fintech": "Freeze orders and legal holds need their own track, separate from data disclosures.",
+      "genai": "Requests may cover prompts and generated content. Decide what you retain, and document it."
+    },
+    "scorecard_measure": [
+      "Emergency requests, p90",
+      "hours"
+    ]
+  }
+]
