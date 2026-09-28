@@ -4,7 +4,7 @@
 
 36 metrics in the order to adopt them. Each comes with the question it answers, a formula, step-by-step measurement for 8 kinds of platform, a starter SQL query and a spreadsheet version for teams without a data team. Track your own numbers, trends over time and a leadership one-pager.
 
-**[Try it live](https://stevenmacchia.github.io/ts-workbench/#metrics)** · part of [T&S Workbench](https://github.com/stevenmacchia/ts-workbench) · free, no sign-up
+**[Try it live](https://stevenmacchia.com/ts-workbench/#metrics)** · part of [T&S Workbench](https://github.com/stevenmacchia/ts-workbench) · free, no sign-up
 
 ![T&S Metrics Framework](assets/metrics-map.png)
 
