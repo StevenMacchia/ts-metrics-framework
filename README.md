@@ -14,7 +14,7 @@ Trust & Safety teams often report what's easy to count, like items removed or re
 
 ## How it works
 
-1. **Pick your platform and stage.** The list adapts: north stars first, then health metrics, then diagnostics.
+1. **Pick your platform and stage.** The list adapts: north stars first, then health metrics, then diagnostics. A guided setup asks for your platform, your stage, the metrics you track and this period's numbers, one metric at a time.
 2. **Open a metric.** Understand it, measure it and track it, with jargon explained on hover.
 3. **Track your numbers.** Targets, status, trends across periods and a one-pager for leadership.
 
@@ -38,6 +38,8 @@ The tool's knowledge, published as open content you can read, reuse and adapt.
 - Preparing transparency reporting
 
 ## More screenshots
+
+![metrics-guided](assets/metrics-guided.png)
 
 ![metrics-article](assets/metrics-article.png)
 
