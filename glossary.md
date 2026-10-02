@@ -16,6 +16,7 @@ Plain-language definitions of the terms used across the framework.
 | **classifier** | A machine-learning model that labels content, for example spam or not spam. |
 | **clean room** | A secured workspace where reviewers can't copy, photograph or take out data. |
 | **confidence interval** | The range the true value probably sits in, given how big your sample was. |
+| **Coop** | ROOST's free, open-source review console: queues, routing and enforcement rules, reporting and appeals APIs, and built-in hash matching with NCMEC reporting. You host it yourself. |
 | **CSAM** | Child sexual abuse material. Handling it is tightly regulated, and it must be reported to the authorities. |
 | **DAU** | Daily active users. |
 | **Digital Services Act** | The EU law that sets rules for online services, including notice and action, appeals, transparency reports and, for the largest platforms, risk assessments and audits. |
@@ -34,6 +35,7 @@ Plain-language definitions of the terms used across the framework.
 | **north star** | One of the few top-level numbers that show whether users are actually safer. |
 | **on-call rotation** | A schedule that names who responds to urgent problems at any hour, and who backs them up. |
 | **Online Safety Act** | The UK law that requires online services to assess and reduce the risk of illegal content and of harm to children. |
+| **Osprey** | ROOST's free, open-source real-time rules engine and investigation console, built at Discord. It needs an engineering team to run. |
 | **p50** | The median: half of cases are faster than this. |
 | **p90** | 90% of cases are faster than this. It shows your slow tail, which is where incidents come from. |
 | **PhotoDNA** | Microsoft's widely used tool for hash matching known child sexual abuse images. |
@@ -43,6 +45,7 @@ Plain-language definitions of the terms used across the framework.
 | **recall** | Of all the rule-breaking content out there, the share your system caught. |
 | **red team** | People who deliberately attack your system to find weaknesses before real attackers do. |
 | **RFP** | Request for proposal: the document you send vendors asking them to bid and answer your questions. |
+| **ROOST** | Robust Open Online Safety Tools: a nonprofit that makes free, open-source trust and safety tools such as Coop and Osprey. |
 | **service level** | An agreed target for how quickly work gets done, such as acting on a severe report within an hour. |
 | **SLA** | Service-level agreement: the response time you've committed to. |
 | **SOC 2** | An independent audit of how a company protects customer data. Type II covers how controls worked over several months. |

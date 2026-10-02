@@ -26,6 +26,7 @@ The tool's knowledge, published as open content you can read, reuse and adapt.
 |---|---|
 | [`metrics/`](metrics/) | 36 metric pages: question, formula, steps, platform notes, SQL, example and a no-data-team version |
 | [`data-to-log.md`](data-to-log.md) | The event logs every metric depends on |
+| [`running-on-coop.md`](running-on-coop.md) | Where each log comes from if your review console is ROOST's Coop, field by field |
 | [`running-the-program.md`](running-the-program.md) | Review rhythm, target setting and vanity metrics to avoid |
 | [`glossary.md`](glossary.md) | Plain-language definitions |
 | [`data/metrics.json`](data/metrics.json) | Everything as JSON |
